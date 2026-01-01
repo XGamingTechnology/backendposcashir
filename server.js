@@ -23,7 +23,7 @@ app.use(express.urlencoded({ extended: true })); // ← BARIS BARU
 // ⬅️ WAJIB: allow cookie dari frontend
 app.use(
   cors({
-    origin: ["http://localhost:3000", "https://06ns6l3d-3000.asse.devtunnels.ms"],
+    origin: ["https://sotoibuksenopati.online", "https://api.sotoibuksenopati.online"],
   })
 );
 

@@ -106,11 +106,13 @@ router.get("/", verifyToken, adminOrCashier, async (req, res) => {
     if (dateRange !== "all") {
       let dateCondition = "";
       const now = new Date();
+
       if (dateRange === "today") {
         const start = new Date(now);
         start.setHours(0, 0, 0, 0);
         dateCondition = `created_at >= $${paramIndex}`;
         params.push(start);
+        paramIndex++; // +1
       } else if (dateRange === "yesterday") {
         const start = new Date(now);
         start.setDate(start.getDate() - 1);
@@ -119,24 +121,26 @@ router.get("/", verifyToken, adminOrCashier, async (req, res) => {
         end.setDate(end.getDate() + 1);
         dateCondition = `created_at >= $${paramIndex} AND created_at < $${paramIndex + 1}`;
         params.push(start, end);
-        paramIndex++;
+        paramIndex += 2; // +2
       } else if (dateRange === "7days") {
         const start = new Date(now);
         start.setDate(start.getDate() - 7);
         dateCondition = `created_at >= $${paramIndex}`;
         params.push(start);
+        paramIndex++; // +1
       } else if (dateRange === "30days") {
         const start = new Date(now);
         start.setDate(start.getDate() - 30);
         dateCondition = `created_at >= $${paramIndex}`;
         params.push(start);
+        paramIndex++; // +1
       }
+
+      // ✅ Tambahkan condition — TANPA menambah paramIndex lagi!
       if (dateCondition) {
         conditions.push(dateCondition);
-        paramIndex += dateCondition.split("$").length - 1;
       }
     }
-
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
     const countQuery = `
       SELECT COUNT(*) FROM orders ${whereClause}
