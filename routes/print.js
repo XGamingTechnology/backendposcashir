@@ -83,7 +83,7 @@ router.get("/receipt/:orderId", async (req, res) => {
 
     /* ===== HEADER ===== */
     print.push(
-      { type: 0, content: "SOTO IBUK SENOPATI", bold: 1, align: 1, format: 2 },
+      { type: 0, content: "SOTO IBUK SENOPATI", bold: 1, align: 1, format: 3 },
       { type: 0, content: "Jl. Tulodong Atas 1 No 3A", align: 1 },
       { type: 0, content: "Kebayoran Baru Jakarta", align: 1 },
       { type: 0, content: "--------------------------------" }
