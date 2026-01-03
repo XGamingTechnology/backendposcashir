@@ -1,3 +1,9 @@
+// backend/routes/print.js
+import { Router } from "express";
+import { pool } from "../config.js";
+
+const router = Router();
+
 router.get("/receipt/:orderId", async (req, res) => {
   const { orderId } = req.params;
   console.log("[PRINT]", orderId);
@@ -99,3 +105,5 @@ router.get("/receipt/:orderId", async (req, res) => {
     );
   }
 });
+
+export default router;
