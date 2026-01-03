@@ -11,6 +11,8 @@ import adminUsersRouter from "./routes/admin/users.js";
 import adminProductsRouter from "./routes/admin/products.js";
 
 import reportsRouter from "./routes/admin/reports.js";
+import printRouter from "./routes/print.js";
+
 const app = express();
 
 /* ================= MIDDLEWARE ================= */
@@ -40,6 +42,7 @@ app.use("/api/users", usersRoutes);
 app.use("/api/admin/users", adminUsersRouter);
 app.use("/api/admin/products", adminProductsRouter);
 app.use("/api/admin/reports", reportsRouter);
+app.use("/api/print", printRouter);
 /* ================= HEALTH CHECK ================= */
 
 app.get("/", (req, res) => {
