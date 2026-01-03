@@ -7,11 +7,9 @@ const router = Router();
 function sanitizeText(text) {
   if (typeof text !== "string") return "";
   return text
-    .replace(/’/g, "'")
-    .replace(/“/g, '"')
-    .replace(/”/g, '"')
     .replace(/[\n\r\t]/g, " ")
-    .replace(/[^\x00-\x7F]/g, "") // hapus non-ASCII (opsional)
+    .replace(/"/g, '\\"')
+    .replace(/[^\x00-\x7F]/g, "")
     .trim();
 }
 
@@ -20,7 +18,7 @@ router.get("/receipt/:orderId", async (req, res) => {
 
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(orderId)) {
-    return res.send(JSON.stringify([{ type: 0, content: "ID order tidak valid", align: 1, bold: 1 }]));
+    return res.end(JSON.stringify([{ type: 0, content: "ID order tidak valid", align: 1, bold: 1 }]));
   }
 
   try {
@@ -31,7 +29,7 @@ router.get("/receipt/:orderId", async (req, res) => {
     );
 
     if (orderRes.rows.length === 0) {
-      return res.send(JSON.stringify([{ type: 0, content: "Order tidak ditemukan", align: 1, bold: 1 }]));
+      return res.end(JSON.stringify([{ type: 0, content: "Order tidak ditemukan", align: 1, bold: 1 }]));
     }
 
     const order = orderRes.rows[0];
@@ -88,14 +86,17 @@ router.get("/receipt/:orderId", async (req, res) => {
     try {
       const jsonStr = JSON.stringify(output);
       res.setHeader("Content-Type", "application/json; charset=utf-8");
-      res.send(jsonStr);
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
+      res.end(jsonStr);
     } catch (e) {
       console.error("JSON STRINGIFY ERROR:", e);
-      res.send(JSON.stringify([{ type: 0, content: "Format struk error", align: 1, bold: 1 }]));
+      res.end(JSON.stringify([{ type: 0, content: "Format struk error", align: 1, bold: 1 }]));
     }
   } catch (err) {
     console.error("PRINT ERROR:", err);
-    res.send(JSON.stringify([{ type: 0, content: "Gagal memuat struk", align: 1, bold: 1 }]));
+    res.end(JSON.stringify([{ type: 0, content: "Gagal memuat struk", align: 1, bold: 1 }]));
   }
 });
 
