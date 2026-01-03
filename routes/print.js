@@ -6,7 +6,13 @@ const router = Router();
 
 function sanitizeText(text) {
   if (typeof text !== "string") return "";
-  return text.replace(/"/g, '\\"').replace(/\n/g, " ").replace(/\r/g, " ").replace(/\t/g, " ").trim();
+  return text
+    .replace(/’/g, "'")
+    .replace(/“/g, '"')
+    .replace(/”/g, '"')
+    .replace(/[\n\r\t]/g, " ")
+    .replace(/[^\x00-\x7F]/g, "") // hapus non-ASCII (opsional)
+    .trim();
 }
 
 router.get("/receipt/:orderId", async (req, res) => {
@@ -59,8 +65,8 @@ router.get("/receipt/:orderId", async (req, res) => {
     output.push({ type: 0, content: "------------------------------", align: 0 });
 
     itemsRes.rows.forEach((item) => {
-      const name = sanitizeText(item.product_name).substring(0, 20);
-      const qty = `${item.qty}x`.padStart(4).substring(0, 4);
+      const name = sanitizeText(item.product_name).substring(0, 18);
+      const qty = `${item.qty}x`.substring(0, 4).padStart(4);
       const price = `Rp ${item.subtotal.toLocaleString("id-ID")}`;
       const line = `${name.padEnd(18)}${qty} ${price}`;
       output.push({ type: 0, content: line, align: 0 });
@@ -79,10 +85,9 @@ router.get("/receipt/:orderId", async (req, res) => {
     output.push({ type: 0, content: sanitizeText(`Metode: ${order.payment_method}`), align: 1 });
     output.push({ type: 0, content: sanitizeText("Terima kasih 🙏"), align: 1, bold: 1 });
 
-    // ✅ Kirim JSON MURNI
     try {
       const jsonStr = JSON.stringify(output);
-      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Type", "application/json; charset=utf-8");
       res.send(jsonStr);
     } catch (e) {
       console.error("JSON STRINGIFY ERROR:", e);
