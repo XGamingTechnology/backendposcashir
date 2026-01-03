@@ -104,4 +104,42 @@ router.get("/top-products", verifyToken, onlyAdmin, async (req, res) => {
   }
 });
 
+// GET /api/admin/reports/orders
+router.get("/orders", verifyToken, onlyAdmin, async (req, res) => {
+  const { period = "all" } = req.query;
+
+  // Validasi period
+  const validPeriods = ["today", "7days", "30days", "all"];
+  if (period && !validPeriods.includes(period)) {
+    return res.status(400).json({ success: false, message: "Periode tidak valid. Gunakan: today, 7days, 30days, atau all" });
+  }
+
+  try {
+    let whereClause = "WHERE status = 'PAID'";
+    const values = [];
+
+    if (period === "today") {
+      whereClause += " AND DATE(created_at) = CURRENT_DATE";
+    } else if (period === "7days") {
+      whereClause += " AND created_at >= NOW() - INTERVAL '7 days'";
+    } else if (period === "30days") {
+      whereClause += " AND created_at >= NOW() - INTERVAL '30 days'";
+    }
+    // Jika period === "all", tidak ada filter tambahan
+
+    const query = `
+      SELECT * FROM orders 
+      ${whereClause}
+      ORDER BY created_at DESC;
+    `;
+
+    const result = await pool.query(query, values);
+
+    res.json({ success: true, data: result.rows });
+  } catch (err) {
+    console.error("GET ORDERS ERROR:", err);
+    res.status(500).json({ success: false, message: "Gagal mengambil data order" });
+  }
+});
+
 export default router;
