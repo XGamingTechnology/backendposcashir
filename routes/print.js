@@ -22,7 +22,6 @@ function sanitizeText(text) {
  * Formatter angka TANPA locale
  */
 function formatRupiah(num) {
-  // Pastikan num di parse ke number
   const n = typeof num === "string" ? parseFloat(num) : num;
   return `Rp ${Math.round(n)}`;
 }
@@ -37,21 +36,20 @@ function formatDate(date) {
 }
 
 /**
- * Helper kirim JSON murni
+ * Kirim JSON murni
  */
-function sendJsonResponse(res, data) {
-  const jsonStr = JSON.stringify(data, null, 2);
+function sendJsonResponse(res, obj) {
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   res.setHeader("Pragma", "no-cache");
   res.setHeader("Expires", "0");
-  res.end(jsonStr);
+  res.end(JSON.stringify(obj, null, 2));
 }
 
 /**
  * GET /api/print/receipt/:orderId
  */
-router.get("/receipt/:orderId", async function (req, res) {
+router.get("/receipt/:orderId", async (req, res) => {
   const orderId = req.params.orderId;
 
   console.log("[DEBUG] Step 0 - Request received:", orderId);
@@ -68,7 +66,7 @@ router.get("/receipt/:orderId", async function (req, res) {
   }
 
   try {
-    // Step 2: Query orders
+    // ===== Step 2: Query orders =====
     console.log("[DEBUG] Step 2 - Querying orders table...");
     const orderRes = await pool.query(
       `SELECT order_number, customer_name, table_number, type_order,
@@ -90,7 +88,7 @@ router.get("/receipt/:orderId", async function (req, res) {
 
     const order = orderRes.rows[0];
 
-    // Step 4: Query order items
+    // ===== Step 4: Query order_items =====
     console.log("[DEBUG] Step 4 - Querying order_items...");
     const itemsRes = await pool.query(
       `SELECT p.name AS product_name, oi.qty, oi.subtotal
@@ -102,15 +100,15 @@ router.get("/receipt/:orderId", async function (req, res) {
 
     console.log("[DEBUG] Step 4 - itemsRes.rows:", itemsRes.rows);
 
-    // Step 5: Build receipt
+    // ===== Step 5: Build receipt =====
     const output = [];
     output.push({ step: 5, status: "info", message: "Starting receipt build" });
 
-    // ===== HEADER =====
+    // HEADER
     const headerLines = ["SOTO IBUK SENOPATI", "Jl.Tulodong Atas 1 no 3A", "Kebayoran Baru Jakarta", "------------------------------"];
     headerLines.forEach((line, idx) => output.push({ step: 5, status: "header", index: idx, content: line }));
 
-    // ===== INFO =====
+    // INFO
     const infoLines = [
       `Order: ${order.order_number}`,
       order.customer_name && order.customer_name !== "Customer Umum" ? `Pelanggan: ${order.customer_name}` : null,
@@ -120,17 +118,19 @@ router.get("/receipt/:orderId", async function (req, res) {
       "------------------------------",
     ].filter(Boolean);
 
-    infoLines.forEach((line, idx) => output.push({ step: 5, status: "info", index: idx, content: sanitizeText(line) }));
+    infoLines.forEach((line, idx) =>
+      output.push({
+        step: 5,
+        status: "info",
+        index: idx,
+        content: sanitizeText(line),
+      })
+    );
 
-    // ===== ITEMS =====
+    // ITEMS
     if (itemsRes.rows.length === 0) {
       console.log("[DEBUG] Step 6 - No items found");
-      output.push({
-        step: 6,
-        status: "warning",
-        message: "BELUM ADA ITEM",
-        bold: true,
-      });
+      output.push({ step: 6, status: "warning", message: "BELUM ADA ITEM", bold: true });
     } else {
       itemsRes.rows.forEach((item, idx) => {
         const name = sanitizeText(item.product_name).padEnd(16);
@@ -143,7 +143,7 @@ router.get("/receipt/:orderId", async function (req, res) {
 
     output.push({ step: 6, status: "info", content: "------------------------------" });
 
-    // ===== TOTAL =====
+    // TOTAL
     const totalLines = [
       `Subtotal ${formatRupiah(order.subtotal)}`,
       order.discount > 0 ? `Diskon   ${formatRupiah(order.discount)}` : null,
@@ -158,18 +158,11 @@ router.get("/receipt/:orderId", async function (req, res) {
 
     console.log("[DEBUG] Step 8 - Final receipt built");
 
-    // 🔹 Wrap output array ke object + success string "true"
-    sendJsonResponse(res, {
-      success: "true",
-      data: output,
-    });
+    // ✅ Return JSON compatible dengan mobile / printer
+    sendJsonResponse(res, { success: "true", data: output, error: null });
   } catch (err) {
     console.error("[DEBUG] PRINT ERROR:", err);
-    sendJsonResponse(res, {
-      success: "false",
-      data: null,
-      error: `GAGAL MUAT STRUK: ${err.message}`,
-    });
+    sendJsonResponse(res, { success: "false", data: null, error: `GAGAL MUAT STRUK: ${err.message}` });
   }
 });
 
