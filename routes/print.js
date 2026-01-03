@@ -51,18 +51,20 @@ function sendJsonResponse(res, data) {
 router.get("/receipt/:orderId", async (req, res) => {
   const { orderId } = req.params;
 
-  // Step 0: debug request
   console.log("[DEBUG] Step 0 - Request received:", orderId);
 
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
   if (!uuidRegex.test(orderId)) {
     console.log("[DEBUG] Step 1 - Invalid UUID");
-    return sendJsonResponse(res, [{ step: 1, status: "error", message: "ID TIDAK VALID" }]);
+    return sendJsonResponse(res, {
+      success: false,
+      data: null,
+      error: "ID TIDAK VALID",
+    });
   }
 
   try {
-    // Step 2: query order
     console.log("[DEBUG] Step 2 - Querying orders table...");
     const orderRes = await pool.query(
       `SELECT order_number, customer_name, table_number, type_order,
@@ -75,12 +77,15 @@ router.get("/receipt/:orderId", async (req, res) => {
 
     if (orderRes.rows.length === 0) {
       console.log("[DEBUG] Step 3 - Order not found");
-      return sendJsonResponse(res, [{ step: 3, status: "error", message: "ORDER TIDAK DITEMUKAN" }]);
+      return sendJsonResponse(res, {
+        success: false,
+        data: null,
+        error: "ORDER TIDAK DITEMUKAN",
+      });
     }
 
     const order = orderRes.rows[0];
 
-    // Step 4: query order items
     console.log("[DEBUG] Step 4 - Querying order_items...");
     const itemsRes = await pool.query(
       `SELECT p.name AS product_name, oi.qty, oi.subtotal
@@ -92,7 +97,6 @@ router.get("/receipt/:orderId", async (req, res) => {
 
     console.log("[DEBUG] Step 4 - itemsRes.rows:", itemsRes.rows);
 
-    // Step 5: mulai build receipt
     const output = [];
     output.push({ step: 5, status: "info", message: "Starting receipt build" });
 
@@ -166,16 +170,19 @@ router.get("/receipt/:orderId", async (req, res) => {
     );
 
     console.log("[DEBUG] Step 8 - Final receipt built");
-    sendJsonResponse(res, output);
+
+    // 🔹 Wrap array ke object supaya kompatibel mobile printer
+    sendJsonResponse(res, {
+      success: true,
+      data: output,
+    });
   } catch (err) {
     console.error("[DEBUG] PRINT ERROR:", err);
-    sendJsonResponse(res, [
-      {
-        step: 9,
-        status: "error",
-        message: `GAGAL MUAT STRUK: ${err.message}`,
-      },
-    ]);
+    sendJsonResponse(res, {
+      success: false,
+      data: null,
+      error: `GAGAL MUAT STRUK: ${err.message}`,
+    });
   }
 });
 
