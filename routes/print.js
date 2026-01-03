@@ -4,6 +4,11 @@ import { pool } from "../config.js";
 
 const router = Router();
 
+function sanitizeText(text) {
+  if (typeof text !== "string") return "";
+  return text.replace(/"/g, '\\"').replace(/\n/g, " ").replace(/\r/g, " ").replace(/\t/g, " ").trim();
+}
+
 router.get("/receipt/:orderId", async (req, res) => {
   const { orderId } = req.params;
 
@@ -34,50 +39,57 @@ router.get("/receipt/:orderId", async (req, res) => {
     );
 
     const output = [];
-    output.push({ type: 0, content: "SOTO IBUK SENOPATI", align: 1, bold: 1 });
-    output.push({ type: 0, content: "Jl.Tulodong Atas 1 no 3A", align: 1 });
-    output.push({ type: 0, content: "Kebayoran Baru, Jakarta Selatan", align: 1 });
+
+    output.push({ type: 0, content: sanitizeText("SOTO IBUK SENOPATI"), align: 1, bold: 1 });
+    output.push({ type: 0, content: sanitizeText("Jl.Tulodong Atas 1 no 3A"), align: 1 });
+    output.push({ type: 0, content: sanitizeText("Kebayoran Baru, Jakarta Selatan"), align: 1 });
     output.push({ type: 0, content: "------------------------------", align: 0 });
-    output.push({ type: 0, content: `Order: ${order.order_number}`, align: 0 });
+
+    output.push({ type: 0, content: sanitizeText(`Order: ${order.order_number}`), align: 0 });
     if (order.customer_name && order.customer_name !== "Customer Umum") {
-      output.push({ type: 0, content: `Pelanggan: ${order.customer_name}`, align: 0 });
+      output.push({ type: 0, content: sanitizeText(`Pelanggan: ${order.customer_name}`), align: 0 });
     }
     if (order.table_number) {
-      output.push({ type: 0, content: `Meja: ${order.table_number}`, align: 0 });
+      output.push({ type: 0, content: sanitizeText(`Meja: ${order.table_number}`), align: 0 });
     }
     const orderType = order.type_order === "dine_in" ? "Dine In" : "Takeaway";
-    output.push({ type: 0, content: `Tipe: ${orderType}`, align: 0 });
+    output.push({ type: 0, content: sanitizeText(`Tipe: ${orderType}`), align: 0 });
     const dateStr = new Date(order.created_at).toLocaleString("id-ID");
-    output.push({ type: 0, content: dateStr, align: 0 });
+    output.push({ type: 0, content: sanitizeText(dateStr), align: 0 });
     output.push({ type: 0, content: "------------------------------", align: 0 });
 
     itemsRes.rows.forEach((item) => {
-      const name = item.product_name.length > 20 ? item.product_name.substring(0, 20) : item.product_name;
-      const qty = `${item.qty}x`;
+      const name = sanitizeText(item.product_name).substring(0, 20);
+      const qty = `${item.qty}x`.padStart(4).substring(0, 4);
       const price = `Rp ${item.subtotal.toLocaleString("id-ID")}`;
-      const line = `${name.padEnd(18)}${qty.padStart(4)} ${price}`;
+      const line = `${name.padEnd(18)}${qty} ${price}`;
       output.push({ type: 0, content: line, align: 0 });
     });
 
     output.push({ type: 0, content: "------------------------------", align: 0 });
-    output.push({ type: 0, content: `Subtotal     Rp ${order.subtotal.toLocaleString("id-ID")}`, align: 0 });
+    output.push({ type: 0, content: sanitizeText(`Subtotal     Rp ${order.subtotal.toLocaleString("id-ID")}`), align: 0 });
     if (order.discount > 0) {
-      output.push({ type: 0, content: `Diskon       Rp ${order.discount.toLocaleString("id-ID")}`, align: 0 });
+      output.push({ type: 0, content: sanitizeText(`Diskon       Rp ${order.discount.toLocaleString("id-ID")}`), align: 0 });
     }
     if (order.tax > 0) {
-      output.push({ type: 0, content: `Pajak        Rp ${order.tax.toLocaleString("id-ID")}`, align: 0 });
+      output.push({ type: 0, content: sanitizeText(`Pajak        Rp ${order.tax.toLocaleString("id-ID")}`), align: 0 });
     }
-    output.push({ type: 0, content: `TOTAL        Rp ${order.total.toLocaleString("id-ID")}`, align: 0, bold: 1 });
+    output.push({ type: 0, content: sanitizeText(`TOTAL        Rp ${order.total.toLocaleString("id-ID")}`), align: 0, bold: 1 });
     output.push({ type: 0, content: "------------------------------", align: 0 });
-    output.push({ type: 0, content: `Metode: ${order.payment_method}`, align: 1 });
-    output.push({ type: 0, content: "Terima kasih 🙏", align: 1, bold: 1 });
+    output.push({ type: 0, content: sanitizeText(`Metode: ${order.payment_method}`), align: 1 });
+    output.push({ type: 0, content: sanitizeText("Terima kasih 🙏"), align: 1, bold: 1 });
 
-    // ✅ Kirim JSON MURNI berupa array
-    res.setHeader("Content-Type", "application/json");
-    res.send(JSON.stringify(output));
+    // ✅ Kirim JSON MURNI
+    try {
+      const jsonStr = JSON.stringify(output);
+      res.setHeader("Content-Type", "application/json");
+      res.send(jsonStr);
+    } catch (e) {
+      console.error("JSON STRINGIFY ERROR:", e);
+      res.send(JSON.stringify([{ type: 0, content: "Format struk error", align: 1, bold: 1 }]));
+    }
   } catch (err) {
     console.error("PRINT ERROR:", err);
-    // Selalu kirim array, bahkan saat error
     res.send(JSON.stringify([{ type: 0, content: "Gagal memuat struk", align: 1, bold: 1 }]));
   }
 });
