@@ -85,7 +85,7 @@ router.post("/", verifyToken, onlyAdmin, async (req, res) => {
 
   try {
     await pool.query(
-      `INSERT INTO products (name, price, category, code, type, active, color) 
+      `INSERT INTO products (name, price, category, code, type, active, color)
        VALUES ($1, $2, $3, $4, $5, true, $6)`,
       [name.trim(), parseInt(price), category?.trim() || null, code?.trim() || null, type?.trim() || null, finalColor]
     );
@@ -157,7 +157,7 @@ router.put("/:id", verifyToken, onlyAdmin, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `UPDATE products 
+      `UPDATE products
        SET name = $1, price = $2, category = $3, code = $4, type = $5, active = $6, color = $7
        WHERE id = $8`,
       [name.trim(), parseInt(price), category?.trim() || null, code?.trim() || null, type?.trim() || null, active ?? true, finalColor, id]
@@ -201,37 +201,6 @@ router.put("/bulk-update-category-color", verifyToken, onlyAdmin, async (req, re
   } catch (err) {
     console.error("BULK UPDATE CATEGORY COLOR ERROR:", err);
     res.status(500).json({ success: false, message: "Gagal memperbarui warna kategori" });
-  }
-});
-
-/**
- * DELETE /api/admin/products/:id
- * 🗑️ Hapus produk (hard delete — karena ini admin)
- */
-router.delete("/:id", verifyToken, onlyAdmin, async (req, res) => {
-  const { id } = req.params;
-
-  try {
-    const orderCheck = await pool.query(`SELECT 1 FROM order_items WHERE product_id = $1 LIMIT 1`, [id]);
-
-    if (orderCheck.rows.length > 0) {
-      return res.status(400).json({
-        success: false,
-        message: "Tidak bisa dihapus: produk sudah pernah digunakan di order",
-      });
-    }
-
-    const result = await pool.query(`DELETE FROM products WHERE id = $1`, [id]);
-
-    if (result.rowCount === 0) {
-      return res.status(404).json({ success: false, message: "Produk tidak ditemukan" });
-    }
-
-    console.log(`[ADMIN] Product deleted by ${req.user.username}: ID ${id}`);
-    res.json({ success: true, message: "Produk berhasil dihapus" });
-  } catch (err) {
-    console.error("DELETE PRODUCT ERROR:", err);
-    res.status(500).json({ success: false, message: "Gagal menghapus produk" });
   }
 });
 
@@ -286,6 +255,37 @@ router.delete("/categories", verifyToken, onlyAdmin, async (req, res) => {
   } catch (err) {
     console.error("DELETE CATEGORY ERROR:", err);
     res.status(500).json({ success: false, message: "Gagal menghapus kategori" });
+  }
+});
+
+/**
+ * DELETE /api/admin/products/:id
+ * 🗑️ Hapus produk (hard delete — karena ini admin)
+ */
+router.delete("/:id", verifyToken, onlyAdmin, async (req, res) => {
+  const { id } = req.params;
+
+  try {
+    const orderCheck = await pool.query(`SELECT 1 FROM order_items WHERE product_id = $1 LIMIT 1`, [id]);
+
+    if (orderCheck.rows.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Tidak bisa dihapus: produk sudah pernah digunakan di order",
+      });
+    }
+
+    const result = await pool.query(`DELETE FROM products WHERE id = $1`, [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ success: false, message: "Produk tidak ditemukan" });
+    }
+
+    console.log(`[ADMIN] Product deleted by ${req.user.username}: ID ${id}`);
+    res.json({ success: true, message: "Produk berhasil dihapus" });
+  } catch (err) {
+    console.error("DELETE PRODUCT ERROR:", err);
+    res.status(500).json({ success: false, message: "Gagal menghapus produk" });
   }
 });
 
