@@ -37,7 +37,7 @@ function formatDate(date) {
  * Helper kirim JSON murni
  */
 function sendJsonResponse(res, data) {
-  const jsonStr = JSON.stringify(data);
+  const jsonStr = JSON.stringify(data, null, 2);
   res.setHeader("Content-Type", "application/json; charset=utf-8");
   res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
   res.setHeader("Pragma", "no-cache");
@@ -51,13 +51,19 @@ function sendJsonResponse(res, data) {
 router.get("/receipt/:orderId", async (req, res) => {
   const { orderId } = req.params;
 
+  // Step 0: debug request
+  console.log("[DEBUG] Step 0 - Request received:", orderId);
+
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
   if (!uuidRegex.test(orderId)) {
-    return sendJsonResponse(res, [{ type: 0, content: "ID TIDAK VALID", align: 1, bold: 1 }]);
+    console.log("[DEBUG] Step 1 - Invalid UUID");
+    return sendJsonResponse(res, [{ step: 1, status: "error", message: "ID TIDAK VALID" }]);
   }
 
   try {
+    // Step 2: query order
+    console.log("[DEBUG] Step 2 - Querying orders table...");
     const orderRes = await pool.query(
       `SELECT order_number, customer_name, table_number, type_order,
               created_at, subtotal, discount, tax, total, payment_method
@@ -65,12 +71,17 @@ router.get("/receipt/:orderId", async (req, res) => {
       [orderId]
     );
 
+    console.log("[DEBUG] Step 2 - orderRes.rows:", orderRes.rows);
+
     if (orderRes.rows.length === 0) {
-      return sendJsonResponse(res, [{ type: 0, content: "ORDER TIDAK DITEMUKAN", align: 1, bold: 1 }]);
+      console.log("[DEBUG] Step 3 - Order not found");
+      return sendJsonResponse(res, [{ step: 3, status: "error", message: "ORDER TIDAK DITEMUKAN" }]);
     }
 
     const order = orderRes.rows[0];
 
+    // Step 4: query order items
+    console.log("[DEBUG] Step 4 - Querying order_items...");
     const itemsRes = await pool.query(
       `SELECT p.name AS product_name, oi.qty, oi.subtotal
        FROM order_items oi
@@ -79,68 +90,92 @@ router.get("/receipt/:orderId", async (req, res) => {
       [orderId]
     );
 
+    console.log("[DEBUG] Step 4 - itemsRes.rows:", itemsRes.rows);
+
+    // Step 5: mulai build receipt
     const output = [];
+    output.push({ step: 5, status: "info", message: "Starting receipt build" });
 
     // ===== HEADER =====
-    output.push({ type: 0, content: "SOTO IBUK SENOPATI", align: 1, bold: 1 });
-    output.push({ type: 0, content: "Jl.Tulodong Atas 1 no 3A", align: 1 });
-    output.push({ type: 0, content: "Kebayoran Baru Jakarta", align: 1 });
-    output.push({ type: 0, content: "------------------------------", align: 0 });
+    const headerLines = ["SOTO IBUK SENOPATI", "Jl.Tulodong Atas 1 no 3A", "Kebayoran Baru Jakarta", "------------------------------"];
+    headerLines.forEach((line, idx) => output.push({ step: 5, status: "header", index: idx, content: line }));
 
     // ===== INFO =====
-    output.push({ type: 0, content: sanitizeText(`Order: ${order.order_number}`), align: 0 });
+    const infoLines = [
+      `Order: ${order.order_number}`,
+      order.customer_name && order.customer_name !== "Customer Umum" ? `Pelanggan: ${order.customer_name}` : null,
+      order.table_number ? `Meja: ${order.table_number}` : null,
+      `Tipe: ${order.type_order === "dine_in" ? "Dine In" : "Takeaway"}`,
+      formatDate(order.created_at),
+      "------------------------------",
+    ].filter(Boolean);
 
-    if (order.customer_name && order.customer_name !== "Customer Umum") {
-      output.push({ type: 0, content: sanitizeText(`Pelanggan: ${order.customer_name}`), align: 0 });
-    }
-
-    if (order.table_number) {
-      output.push({ type: 0, content: sanitizeText(`Meja: ${order.table_number}`), align: 0 });
-    }
-
-    const typeOrder = order.type_order === "dine_in" ? "Dine In" : "Takeaway";
-    output.push({ type: 0, content: sanitizeText(`Tipe: ${typeOrder}`), align: 0 });
-    output.push({ type: 0, content: formatDate(order.created_at), align: 0 });
-
-    output.push({ type: 0, content: "------------------------------", align: 0 });
+    infoLines.forEach((line, idx) =>
+      output.push({
+        step: 5,
+        status: "info",
+        index: idx,
+        content: sanitizeText(line),
+      })
+    );
 
     // ===== ITEMS =====
-    itemsRes.rows.forEach((item) => {
-      const name = sanitizeText(item.product_name).padEnd(16);
-      const qty = `${item.qty}x`.padStart(4);
-      const price = formatRupiah(item.subtotal);
-      const line = sanitizeText(`${name}${qty} ${price}`);
-      output.push({ type: 0, content: line, align: 0 });
-    });
+    if (itemsRes.rows.length === 0) {
+      console.log("[DEBUG] Step 6 - No items found");
+      output.push({
+        step: 6,
+        status: "warning",
+        message: "BELUM ADA ITEM",
+        bold: true,
+      });
+    } else {
+      itemsRes.rows.forEach((item, idx) => {
+        const name = sanitizeText(item.product_name).padEnd(16);
+        const qty = `${item.qty}x`.padStart(4);
+        const price = formatRupiah(item.subtotal);
+        const line = sanitizeText(`${name}${qty} ${price}`);
+        output.push({
+          step: 6,
+          status: "item",
+          index: idx,
+          content: line,
+        });
+      });
+    }
 
-    output.push({ type: 0, content: "------------------------------", align: 0 });
+    output.push({ step: 6, status: "info", content: "------------------------------" });
 
     // ===== TOTAL =====
-    output.push({ type: 0, content: sanitizeText(`Subtotal ${formatRupiah(order.subtotal)}`), align: 0 });
+    const totalLines = [
+      `Subtotal ${formatRupiah(order.subtotal)}`,
+      order.discount > 0 ? `Diskon   ${formatRupiah(order.discount)}` : null,
+      order.tax > 0 ? `Pajak    ${formatRupiah(order.tax)}` : null,
+      `TOTAL    ${formatRupiah(order.total)}`,
+      "------------------------------",
+      `Metode: ${order.payment_method}`,
+      "Terima kasih",
+    ].filter(Boolean);
 
-    if (order.discount > 0) {
-      output.push({ type: 0, content: sanitizeText(`Diskon   ${formatRupiah(order.discount)}`), align: 0 });
-    }
+    totalLines.forEach((line, idx) =>
+      output.push({
+        step: 7,
+        status: "total",
+        index: idx,
+        content: sanitizeText(line),
+      })
+    );
 
-    if (order.tax > 0) {
-      output.push({ type: 0, content: sanitizeText(`Pajak    ${formatRupiah(order.tax)}`), align: 0 });
-    }
-
-    output.push({
-      type: 0,
-      content: sanitizeText(`TOTAL    ${formatRupiah(order.total)}`),
-      align: 0,
-      bold: 1,
-    });
-
-    output.push({ type: 0, content: "------------------------------", align: 0 });
-    output.push({ type: 0, content: sanitizeText(`Metode: ${order.payment_method}`), align: 1 });
-    output.push({ type: 0, content: "Terima kasih", align: 1, bold: 1 });
-
+    console.log("[DEBUG] Step 8 - Final receipt built");
     sendJsonResponse(res, output);
   } catch (err) {
-    console.error("PRINT ERROR:", err);
-    sendJsonResponse(res, [{ type: 0, content: "GAGAL MUAT STRUK", align: 1, bold: 1 }]);
+    console.error("[DEBUG] PRINT ERROR:", err);
+    sendJsonResponse(res, [
+      {
+        step: 9,
+        status: "error",
+        message: `GAGAL MUAT STRUK: ${err.message}`,
+      },
+    ]);
   }
 });
 
