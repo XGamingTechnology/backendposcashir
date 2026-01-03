@@ -37,100 +37,62 @@ function buildDateCondition(period, start, end) {
   return conditions;
 }
 
-// GET /api/admin/reports/top-products
-router.get("/top-products", verifyToken, onlyAdmin, async (req, res) => {
-  const { period = "7days", start, end } = req.query;
-
-  // Validasi period
-  const validPeriods = ["today", "7days", "30days", "all"];
-  if (period && !validPeriods.includes(period)) {
-    return res.status(400).json({ success: false, message: "Periode tidak valid. Gunakan: today, 7days, 30days, atau all" });
-  }
-
-  // Jika start/end ada, pastikan format valid
-  if ((start && !end) || (!start && end)) {
-    return res.status(400).json({ success: false, message: "Jika menggunakan rentang, 'start' dan 'end' harus diisi bersamaan (format ISO: YYYY-MM-DD)" });
-  }
-
-  try {
-    // Bangun kondisi tanggal
-    const dateConditions = buildDateCondition(period, start, end);
-    const whereClauses = dateConditions.map((cond) => cond.sql).join(" AND ");
-    const values = dateConditions.filter((cond) => cond.value !== null).map((cond) => cond.value);
-
-    // Bangun query dengan parameterized values
-    const baseQuery = `
-      SELECT 
-        oi.product_name,
-        SUM(oi.qty) as total_qty,
-        SUM(oi.subtotal) as total_revenue
-      FROM order_items oi
-      JOIN orders o ON oi.order_id = o.id
-      WHERE o.status = 'PAID'
-    `;
-
-    const groupQuery = `
-      GROUP BY oi.product_name
-      ORDER BY total_qty DESC
-      LIMIT 10
-    `;
-
-    let fullQuery = baseQuery;
-    let queryValues = [];
-
-    if (whereClauses) {
-      fullQuery += ` AND ${whereClauses}`;
-    }
-    fullQuery += groupQuery;
-
-    // Gabungkan nilai parameter (offset index sesuai jumlah kondisi)
-    queryValues = values;
-
-    const result = await pool.query(fullQuery, queryValues);
-
-    const data = result.rows.map((row) => ({
-      name: row.product_name,
-      qty: parseInt(row.total_qty, 10),
-      revenue: parseFloat(row.total_revenue),
-    }));
-
-    res.json({ success: true, data });
-  } catch (err) {
-    if (err.message === "Invalid period") {
-      return res.status(400).json({ success: false, message: "Periode tidak valid" });
-    }
-    console.error("GET TOP PRODUCTS ERROR:", err);
-    res.status(500).json({ success: false, message: "Gagal mengambil data produk" });
-  }
-});
-
 // GET /api/admin/reports/orders
 router.get("/orders", verifyToken, onlyAdmin, async (req, res) => {
-  const { period = "all" } = req.query;
+  const { period = "7days", start, end } = req.query;
 
-  // Validasi period
   const validPeriods = ["today", "7days", "30days", "all"];
   if (period && !validPeriods.includes(period)) {
-    return res.status(400).json({ success: false, message: "Periode tidak valid. Gunakan: today, 7days, 30days, atau all" });
+    return res.status(400).json({ success: false, message: "Periode tidak valid" });
+  }
+
+  if ((start && !end) || (!start && end)) {
+    return res.status(400).json({ success: false, message: "'start' dan 'end' harus diisi bersamaan" });
   }
 
   try {
-    let whereClause = "WHERE status = 'PAID'";
+    let whereClause = "WHERE o.status = 'PAID'";
     const values = [];
 
-    if (period === "today") {
-      whereClause += " AND DATE(created_at) = CURRENT_DATE";
-    } else if (period === "7days") {
-      whereClause += " AND created_at >= NOW() - INTERVAL '7 days'";
-    } else if (period === "30days") {
-      whereClause += " AND created_at >= NOW() - INTERVAL '30 days'";
+    if (period === "custom" && start && end) {
+      whereClause += " AND o.created_at >= $1 AND o.created_at <= $2";
+      values.push(new Date(start), new Date(end));
+    } else {
+      switch (period) {
+        case "today":
+          whereClause += " AND DATE(o.created_at) = CURRENT_DATE";
+          break;
+        case "7days":
+          whereClause += " AND o.created_at >= NOW() - INTERVAL '7 days'";
+          break;
+        case "30days":
+          whereClause += " AND o.created_at >= NOW() - INTERVAL '30 days'";
+          break;
+        // case "all": no additional clause
+      }
     }
-    // Jika period === "all", tidak ada filter tambahan
 
     const query = `
-      SELECT * FROM orders 
+      SELECT 
+        o.id,
+        o.order_number,
+        o.customer_name,
+        o.table_number,
+        o.status,
+        o.payment_method,
+        o.total::numeric, -- konversi ke numeric
+        o.created_at,
+        COALESCE(json_agg(json_build_object(
+          'product_name', oi.product_name,
+          'quantity', oi.qty,
+          'price', oi.price::numeric,
+          'subtotal', oi.subtotal::numeric
+        )) FILTER (WHERE oi.product_name IS NOT NULL), '[]') as items
+      FROM orders o
+      LEFT JOIN order_items oi ON o.id = oi.order_id
       ${whereClause}
-      ORDER BY created_at DESC;
+      GROUP BY o.id
+      ORDER BY o.created_at DESC;
     `;
 
     const result = await pool.query(query, values);
@@ -138,7 +100,7 @@ router.get("/orders", verifyToken, onlyAdmin, async (req, res) => {
     res.json({ success: true, data: result.rows });
   } catch (err) {
     console.error("GET ORDERS ERROR:", err);
-    res.status(500).json({ success: false, message: "Gagal mengambil data order" });
+    res.status(500).json({ success: false, message: "Gagal mengambil data" });
   }
 });
 
