@@ -20,9 +20,9 @@ const DEFAULT_COLOR_MAP = {
 router.get("/", verifyToken, onlyAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT name, color, created_at
+      SELECT name, color, created_at, sort_order
       FROM product_categories
-      ORDER BY name
+      ORDER BY sort_order ASC, name ASC
     `);
     res.json({ success: true, data: result.rows, count: result.rows.length });
   } catch (err) {

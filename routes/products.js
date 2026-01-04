@@ -11,6 +11,7 @@ const router = express.Router();
  * 👥 Akses: admin & kasir
  * 🔑 Sinkronkan warna dari product_categories
  */
+// routes/api/products.js
 router.get("/", verifyToken, adminOrCashier, async (req, res) => {
   try {
     const result = await pool.query(`
@@ -19,13 +20,13 @@ router.get("/", verifyToken, adminOrCashier, async (req, res) => {
         p.name,
         p.price,
         p.category,
-        p.active,
-        p.created_at,
-        COALESCE(pc.color, p.color, '#808080') AS color
+        COALESCE(pc.color, p.color, '#808080') AS color,
+        p.code,
+        p.type
       FROM products p
       LEFT JOIN product_categories pc ON p.category = pc.name
       WHERE p.active = true
-      ORDER BY p.category, p.name
+      ORDER BY pc.sort_order ASC, p.category, p.name
     `);
 
     res.json({

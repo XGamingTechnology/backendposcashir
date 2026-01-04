@@ -12,9 +12,19 @@ const router = express.Router();
 router.get("/", verifyToken, onlyAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT id, code, name, price, category, type, active, created_at, color
-      FROM products
-      ORDER BY name
+      SELECT 
+        p.id,
+        p.code,
+        p.name,
+        p.price,
+        p.category,
+        p.type,
+        p.active,
+        p.created_at,
+        COALESCE(pc.color, p.color, '#808080') AS color
+      FROM products p
+      LEFT JOIN product_categories pc ON p.category = pc.name
+      ORDER BY pc.sort_order ASC, p.category, p.name
     `);
 
     res.json({
