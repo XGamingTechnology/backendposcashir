@@ -1,8 +1,8 @@
 // routes/api/admin/product-categories.js
 import express from "express";
-import { pool } from "../../../config.js";
-import { verifyToken } from "../../../middlewares/auth.js";
-import { onlyAdmin } from "../../../middlewares/role.js";
+import { pool } from "../../config.js";
+import { verifyToken } from "../../middlewares/auth.js";
+import { onlyAdmin } from "../../middlewares/role.js";
 
 const router = express.Router();
 
