@@ -9,14 +9,23 @@ const router = express.Router();
 /**
  * GET /api/products
  * 👥 Akses: admin & kasir
+ * 🔑 Sinkronkan warna dari product_categories
  */
 router.get("/", verifyToken, adminOrCashier, async (req, res) => {
   try {
     const result = await pool.query(`
-      SELECT id, name, price, category, active, created_at, color
-      FROM products
-      WHERE active = true
-      ORDER BY category, name
+      SELECT 
+        p.id,
+        p.name,
+        p.price,
+        p.category,
+        p.active,
+        p.created_at,
+        COALESCE(pc.color, p.color, '#808080') AS color
+      FROM products p
+      LEFT JOIN product_categories pc ON p.category = pc.name
+      WHERE p.active = true
+      ORDER BY p.category, p.name
     `);
 
     res.json({
