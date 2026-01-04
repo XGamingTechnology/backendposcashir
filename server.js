@@ -12,6 +12,7 @@ import adminProductsRouter from "./routes/admin/products.js";
 
 import reportsRouter from "./routes/admin/reports.js";
 import printRouter from "./routes/print.js";
+import productCategoriesRouter from "./routes/admin/product-categories.js";
 
 const app = express();
 
@@ -43,6 +44,7 @@ app.use("/api/admin/users", adminUsersRouter);
 app.use("/api/admin/products", adminProductsRouter);
 app.use("/api/admin/reports", reportsRouter);
 app.use("/api/print", printRouter);
+app.use("/api/admin/product-categories", productCategoriesRouter);
 /* ================= HEALTH CHECK ================= */
 
 app.get("/", (req, res) => {
