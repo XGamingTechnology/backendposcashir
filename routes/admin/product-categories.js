@@ -66,6 +66,20 @@ router.post("/", verifyToken, onlyAdmin, async (req, res) => {
   }
 });
 
+// POST /api/admin/product-categories/batch-update-order
+router.post("/batch-update-order", verifyToken, onlyAdmin, async (req, res) => {
+  const { categories } = req.body;
+  try {
+    for (const cat of categories) {
+      await pool.query("UPDATE product_categories SET sort_order = $1 WHERE name = $2", [cat.sort_order, cat.name]);
+    }
+    res.json({ success: true, message: "Urutan kategori berhasil diperbarui" });
+  } catch (err) {
+    console.error("UPDATE CATEGORY ORDER ERROR:", err);
+    res.status(500).json({ success: false, message: "Gagal memperbarui urutan" });
+  }
+});
+
 /**
  * PUT /api/admin/product-categories/:name
  * ✏️ Ubah nama atau warna kategori
