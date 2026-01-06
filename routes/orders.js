@@ -7,6 +7,18 @@ import { adminOrCashier, onlyAdmin } from "../middlewares/role.js";
 const router = express.Router();
 const TAX_RATE = 0.1; // 10%
 
+// ✅ Daftar metode pembayaran valid
+const VALID_PAYMENT_METHODS = ["cash", "debit", "credit", "qris", "transfer"];
+
+/**
+ * Helper: normalisasi metode pembayaran ke lowercase
+ */
+const normalizePaymentMethod = (method) => {
+  if (typeof method !== "string") return null;
+  const normalized = method.toLowerCase().trim();
+  return VALID_PAYMENT_METHODS.includes(normalized) ? normalized : null;
+};
+
 /**
  * Helper: dapatkan user ID integer dari UUID
  */
@@ -56,6 +68,8 @@ function normalizeOrder(order) {
     total: order.total ? parseFloat(order.total) : 0,
     cash_received: order.cash_received ? parseFloat(order.cash_received) : null,
     change_amount: order.change_amount ? parseFloat(order.change_amount) : null,
+    // ✅ Normalisasi saat baca dari DB
+    payment_method: order.payment_method ? normalizePaymentMethod(order.payment_method) : null,
   };
 }
 
@@ -447,8 +461,9 @@ router.post("/:id/pay", verifyToken, adminOrCashier, async (req, res) => {
     return res.status(400).json({ success: false, message: "Metode pembayaran wajib diisi" });
   }
 
-  const validPaymentMethods = ["cash", "debit", "credit", "qris", "transfer"];
-  if (!validPaymentMethods.includes(paymentMethod)) {
+  // ✅ Normalisasi dan validasi
+  const normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
+  if (!normalizedPaymentMethod) {
     return res.status(400).json({ success: false, message: "Metode pembayaran tidak didukung" });
   }
 
@@ -465,7 +480,7 @@ router.post("/:id/pay", verifyToken, adminOrCashier, async (req, res) => {
     let cashReceivedValue = null;
     let changeAmountValue = null;
 
-    if (paymentMethod === "cash") {
+    if (normalizedPaymentMethod === "cash") {
       if (typeof cashReceived !== "number" || cashReceived < total) {
         return res.status(400).json({
           success: false,
@@ -491,10 +506,10 @@ router.post("/:id/pay", verifyToken, adminOrCashier, async (req, res) => {
         updated_at = NOW()
       WHERE id = $7
       `,
-      [paymentMethod, finalDiscount, tax, total, cashReceivedValue, changeAmountValue, id]
+      [normalizedPaymentMethod, finalDiscount, tax, total, cashReceivedValue, changeAmountValue, id]
     );
 
-    console.log(`[ORDERS] Order paid by ${req.user.username}: ${id} via ${paymentMethod}`);
+    console.log(`[ORDERS] Order paid by ${req.user.username}: ${id} via ${normalizedPaymentMethod}`);
     res.json({ success: true, message: "Pembayaran berhasil" });
   } catch (err) {
     console.error("PAY ORDER ERROR:", err);
@@ -505,7 +520,7 @@ router.post("/:id/pay", verifyToken, adminOrCashier, async (req, res) => {
 // === PATCH /api/orders/:id/status ===
 router.patch("/:id/status", verifyToken, adminOrCashier, async (req, res) => {
   const { id } = req.params;
-  const { status } = req.body;
+  const { status, paymentMethod } = req.body;
 
   const validStatus = ["DRAFT", "PAID", "CANCELED"];
   if (!validStatus.includes(status)) {
@@ -513,17 +528,46 @@ router.patch("/:id/status", verifyToken, adminOrCashier, async (req, res) => {
   }
 
   try {
-    const result = await pool.query(`UPDATE orders SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING id`, [status, id]);
-    if (result.rowCount === 0) return res.status(404).json({ success: false, message: "Order tidak ditemukan" });
+    let normalizedPaymentMethod = null;
+    if (status === "PAID" && paymentMethod) {
+      normalizedPaymentMethod = normalizePaymentMethod(paymentMethod);
+      if (!normalizedPaymentMethod) {
+        return res.status(400).json({ success: false, message: "Metode pembayaran tidak valid" });
+      }
+    }
+
+    const updateFields = ["status = $1", "updated_at = NOW()"];
+    const params = [status, id];
+    let paramIndex = 2;
 
     if (status === "PAID") {
       const order = await pool.query(`SELECT subtotal FROM orders WHERE id = $1`, [id]);
       if (order.rows.length > 0) {
         const subtotal = parseFloat(order.rows[0].subtotal);
         const { discount, tax, total } = calculatePayment(subtotal, 0, true);
-        await pool.query(`UPDATE orders SET discount = $1, tax = $2, total = $3, paid_at = NOW() WHERE id = $4`, [discount, tax, total, id]);
+        
+        updateFields.push(`discount = $${paramIndex++}`);
+        params.splice(params.length - 1, 0, discount);
+
+        updateFields.push(`tax = $${paramIndex++}`);
+        params.splice(params.length - 1, 0, tax);
+
+        updateFields.push(`total = $${paramIndex++}`);
+        params.splice(params.length - 1, 0, total);
+
+        updateFields.push(`paid_at = NOW()`);
+        
+        if (normalizedPaymentMethod) {
+          updateFields.push(`payment_method = $${paramIndex++}`);
+          params.splice(params.length - 1, 0, normalizedPaymentMethod);
+        }
       }
     }
+
+    const query = `UPDATE orders SET ${updateFields.join(", ")} WHERE id = $${paramIndex}`;
+    const result = await pool.query(query, params);
+
+    if (result.rowCount === 0) return res.status(404).json({ success: false, message: "Order tidak ditemukan" });
 
     console.log(`[ORDERS] Status updated: order ${id} → ${status}`);
     res.json({ success: true, message: "Status order berhasil diubah" });
