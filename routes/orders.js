@@ -347,8 +347,96 @@ router.post("/", verifyToken, adminOrCashier, async (req, res) => {
 });
 
 // === PUT /api/orders/:id ===
-// (Tidak perlu ubah — cash hanya relevan saat bayar, bukan saat edit draft)
-// ... kode PUT tetap sama seperti sebelumnya ...
+router.put("/:id", verifyToken, adminOrCashier, async (req, res) => {
+  const { id } = req.params;
+  const { customer_name, table_number, type_order, items } = req.body;
+
+  const validTypes = ["dine_in", "takeaway"];
+  const orderType = type_order || "dine_in";
+  if (!validTypes.includes(orderType)) {
+    return res.status(400).json({ success: false, message: "Tipe order tidak valid" });
+  }
+
+  const tableNum = table_number?.trim() || null;
+  if (orderType === "dine_in" && (!tableNum || tableNum === "-")) {
+    return res.status(400).json({ success: false, message: "Nomor meja wajib diisi untuk makan di tempat" });
+  }
+
+  if (!Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ success: false, message: "Order harus memiliki minimal 1 item" });
+  }
+
+  let sanitizedItems;
+  try {
+    sanitizedItems = sanitizeItems(items);
+  } catch (err) {
+    return res.status(400).json({ success: false, message: "Item tidak valid" });
+  }
+
+  try {
+    const orderCheck = await pool.query(`SELECT id, status FROM orders WHERE id = $1`, [id]);
+    if (orderCheck.rows.length === 0) return res.status(404).json({ success: false, message: "Order tidak ditemukan" });
+    if (orderCheck.rows[0].status !== "DRAFT") return res.status(400).json({ success: false, message: "Order hanya bisa diedit dalam status DRAFT" });
+
+    const cashierId = await getUserIdByUuid(req.user.id);
+
+    const productIds = sanitizedItems.map((item) => item.product_id);
+    const productResult = await pool.query(`SELECT id, name, price FROM products WHERE id = ANY($1) AND active = true`, [productIds]);
+
+    const productMap = new Map();
+    for (const p of productResult.rows) {
+      productMap.set(p.id, { name: p.name, price: p.price });
+    }
+
+    for (const item of sanitizedItems) {
+      if (!productMap.has(item.product_id)) {
+        return res.status(400).json({ success: false, message: `Produk tidak ditemukan: ${item.product_id}` });
+      }
+    }
+
+    let orderSubtotal = 0;
+    for (const item of sanitizedItems) {
+      orderSubtotal += productMap.get(item.product_id).price * item.qty;
+    }
+
+    const { subtotal, discount, tax, total } = calculatePayment(orderSubtotal, 0, false);
+
+    await pool.query(
+      `UPDATE orders
+       SET 
+         customer_name = $1, 
+         table_number = $2, 
+         type_order = $3,
+         cashier_id = $4, 
+         subtotal = $5, 
+         discount = $6, 
+         tax = $7, 
+         total = $8, 
+         updated_at = NOW()
+       WHERE id = $9`,
+      [customer_name || "-", tableNum, orderType, cashierId, subtotal, discount, tax, total, id]
+    );
+
+    await pool.query(`DELETE FROM order_items WHERE order_id = $1`, [id]);
+
+    if (sanitizedItems.length > 0) {
+      const values = sanitizedItems.map((item) => {
+        const product = productMap.get(item.product_id);
+        const itemSubtotal = product.price * item.qty;
+        return [id, product.name, product.price, item.product_id, item.qty, itemSubtotal];
+      });
+
+      const placeholders = values.map((_, i) => `($${i * 6 + 1}, $${i * 6 + 2}, $${i * 6 + 3}, $${i * 6 + 4}, $${i * 6 + 5}, $${i * 6 + 6})`).join(", ");
+      await pool.query(`INSERT INTO order_items (order_id, product_name, price, product_id, qty, subtotal) VALUES ${placeholders}`, values.flat());
+    }
+
+    console.log(`[ORDERS] Order edited by ${req.user.username}: ${id} (Type: ${orderType})`);
+    res.json({ success: true, message: "Order berhasil diperbarui" });
+  } catch (err) {
+    console.error("UPDATE ORDER ERROR:", err);
+    res.status(500).json({ success: false, message: "Gagal memperbarui order" });
+  }
+});
 
 // === POST /api/orders/:id/pay ===
 router.post("/:id/pay", verifyToken, adminOrCashier, async (req, res) => {
@@ -415,7 +503,6 @@ router.post("/:id/pay", verifyToken, adminOrCashier, async (req, res) => {
 });
 
 // === PATCH /api/orders/:id/status ===
-// Tetap seperti sebelumnya (tidak mengatur cashReceived)
 router.patch("/:id/status", verifyToken, adminOrCashier, async (req, res) => {
   const { id } = req.params;
   const { status } = req.body;
@@ -517,7 +604,6 @@ router.get("/:id/public", async (req, res) => {
 });
 
 // === POST /api/orders/:id/cancel ===
-// (Sudah valid — tidak perlu ubah)
 router.post("/:id/cancel", verifyToken, adminOrCashier, async (req, res) => {
   const { id } = req.params;
 
